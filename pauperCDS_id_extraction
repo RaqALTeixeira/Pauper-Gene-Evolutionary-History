@@ -1,0 +1,109 @@
+#Blast 'pauper' gene against the reference genome (Lmutabilis.mollA12.v1.0asm.p.fa)
+#in the fasta file
+
+#The 'pauper' gene was identified in Mancinotti et al 2023 to be the coding region of AT (in the Amiga variant). 
+#Particularly, the mutation responsible is the SNP_2.
+
+#NCBI NR and NT databases, with taxaIDs, available from:
+#/home/bnevado/software/blast/db/
+
+#Blast the 'pauper' gene (paupergeneseq_amiga.fa) against the reference genome
+
+#-query input_file (sequence to blast)
+#-subject/-db (reference genome, either a specified subject, as this case, or a database)
+#-out output_file (store the blast results)
+
+blastn -query paupergeneseq_amiga.fa -subject Lmutabilis.mollA12.v1.0.asm.p.fa -out output_file
+
+#Results of the blast were moved to the file query_paupergene
+
+#The full gene sequence is present in the following region:
+#15884690 - 15887242
+#(scaffold_9)
+
+#It is composed of 4 exons
+#15886433        15885774
+#15885163        15884690
+#15887242        15886998
+
+#Scan the annotations corresponding to scaffold_9
+#for annotation sequences begining (4th collumn) or ending
+#(5th collumn) in the interval between 15882000 - 15889000
+
+grep -w scaffold_9 Lmutabilis.mollA12.v1.0.asm.p.gene.gff scaffold_9
+awk '($4 >= 15882000 && $4 <= 15889000) || ($5 >= 15882000 && $5 <= 15889000)' scaffold_9 filtering
+
+#According to the annotation, there is a gene in the region
+#15884679 - 15887242 (a few nucleotides before the region determined by the blast).
+
+head -n 1 filtering paupergeneannote_Lmut.gff
+
+#Module: cleanfasta2/161123
+#scaffold_9.fas corresponds to the fasta sequences in Lmutabilis.mollA12.v1.0.asm.p.fa of the scaffold_9
+#paupergeneannote_Lmut.gff corresponds to the .gff file pertaining to the region previously determined to contain the pauper gene
+
+cleanfasta2 -infile scaffold_9.fas -outfile gene_Lmutsamples.fas -maxMissing 100 -format fasta -gff paupergeneannote_Lmut.gff -scaffold scaffold_9 -include 1
+
+#The sequence correspondent to the AT coding sequence (LOC109328823 spermidine coumaroyl-CoA acyltransferase-like,
+#within which the pauper gene was identified), in L. angustifolis
+#was obtained from https://www.ncbi.nlm.nih.gov/ (Langustifolis.LOC109328823.fna). A blast was run against the
+#template genome of L mutabilis.
+
+blastn -query Langustifolis.LOC109328823.fna -subject Lmutabilis.mollA12.v1.0.asm.p.fa -outfmt 6 -out query_short_Langustifolis.paupergene
+
+#8 sequences in the L mutabilis genome presented identity with the LOC109328823 gene.
+#Four of these were in the same scaffold (scaffold_9) as the pauper gene sequence extracted directly from the
+#article.
+
+#Ran an observational analysis of the L mutabilis annotations in the 15884679 - 15887242
+#region, comparing it to the blast of the pauper gene region on L mutabilis (from the article)
+#and of the AT gene region (of L angustifolis) on L mutabilis. From this, it would seem the exons
+#corresponding to the pauper gene are the following:
+
+#Lmut annotations
+#1 scaffold_9      AUGUSTUS        exon    15885779        15886425        .       -       .       ID=exon-192897;Parent=lmut_g51139.>
+#2 scaffold_9      AUGUSTUS        exon    15884679        15884938        .       -       .       ID=exon-192895;Parent=lmut_g51139.t1>
+#3 scaffold_9      AUGUSTUS        exon    15887002        15887242        .       -       .       ID=exon-192898;Parent=lmut_g51139.t1>
+
+#paupergene blast
+#1 Query_1 scaffold_9      92.308  663     45      4       231     890     15886433        15885774        0.0     937
+#2 Query_1 scaffold_9      94.937  474     24      0       881     1354    15885163        15884690        0.0     743
+#3 Query_1 scaffold_9      90.204  245     21      1       1       242     15887242        15886998        4.45e-84        316
+
+#ATgene blast
+#1 NC_032024.1:c18720909-18717081  scaffold_9      92.350  732     52      3       1872    2600    15886492        15885762        0.0 >
+#2 NC_032024.1:c18720909-18717081  scaffold_9      92.784  582     34      6       3045    3621    15885213        15884635        0.0 >
+#3 NC_032024.1:c18720909-18717081  scaffold_9      88.169  355     32      5       8       353     15887323        15886970        4.36>
+
+#The annotation of each exon was copied to a file (exon[1,2,3,4]annote_Lmut.gff).
+
+cleanfasta2 -infile scaffold_9.fas -outfile exon[NUMBER]_Lmutsamples.fas -maxMissing 100 -format fasta -gff exon[NUMBER]annote_Lmut.gff -scaffold scaffold_9 -include 1
+
+#CDS version: getCDS/14022015
+
+getCDS -inblast exon[1,2 and 3]_5.3inblast_Lmut -infas files -outfolder . -cutmode cds
+
+#exon[1,2 and 3]_5.3inblast_Lmut are three files with the following structure:
+
+##qseqid   qstart   qend
+##scaffold_9  15887002 15887242
+
+#getCDS will run through the scaffold_9 fasta sequences for all the samples and extract the sequence of the gene for all samples,
+#in the 5' to 3' direction.
+#-infas files is a file with the following structure:
+
+##files_scaffold
+
+#And is the path to the fasta file containing the samples.
+#Using seaview, the start codon was verified and corrected on the exon sequences.
+#In seaview, it was determined the existence of a fourth exon. The fourth exon was extracted in the region between exon 1 and 2
+#Order: exon3, exon1, exon4, exon2
+#in the same way described for the other 3. 
+
+#concatenateFasta version: concatenateFasta/16022018
+
+concatenateFasta -files files_exonfastas -outfile out.fas -missChar N
+
+#files_exonfastas is a file containing the path to the 
+#file containing the fasta sequences for every sample
+#in the order in which the exons appear in the CDS (3, 1, 4, 2)

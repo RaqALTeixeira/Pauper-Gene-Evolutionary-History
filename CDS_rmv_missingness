@@ -1,0 +1,24 @@
+#To correct the problems encountered during alignment, sequences with >30% missing data were
+#removed from the analysis.
+
+#To identify sequences with >30% missing data, cleanfasta2/161123 was used.
+
+cleanfasta2 -infile allExons.fas -outfile stats_paupergeneCDS -maxMissing 100 -format stats
+
+#allExons.fas is the fasta file with the aligned exons/CDS 
+#help ''5. Output format 'stats' will write out missingness and heterozygosity per sample (after excluding sites with
+#missing data above treshold, and by windows if -winsize used''
+
+###SCRIPT: ./script_missingness30###
+
+awk '{print $1}' stats_paupergeneCDS > stats_column1
+
+./script_missing2ness30 stats_column1 allExons.cnct.fas goodSamples.list.txt
+
+#allExons was desinterleaved (allExons.cnct.fas) and put to ./script_missig2ness30
+#This produced a list (goodSamples.list.txt) which contains all the new sequences with 
+#less than 30% missingness
+#celanfasta2 was then used to select from the fasta file containing all the sequences
+#only the CDS in the goodSamples.list.txt
+
+> cleanfasta2 -infile allExons.cnct.fas -outfile out.fas -maxMissing 100 -samples goodSamples.list.txt

@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Input and output file
+input="$1"
+fasta="$2"
+output="$3"
+
+
+#output must be a new file name
+
+# This variable will store the contents of the line prior to every line read
+prev_name=""
+
+# Read the file line by line
+while read -r line; do
+    # Check if the line is numerical
+    if [[ "$line" =~ ^[0-9.eE-]+$ ]]; then
+        # Extract the first column value
+        value=$(echo "$line" | awk -F ' +' '{print $1}')
+        echo "$prev_name 's value is: $value"
+        # Check if the value is less than 0.3
+        if (( $(echo "$value < 0.3" | bc -l) )); then
+            # Print the previous line (name) and the current line (value)
+            echo "$prev_name $line" >> "$output"
+	fi
+    else
+        # Store the current line as previous line (name)
+        prev_name="$line"
+    fi
+done < $input 
+
+# Call cleanfasta2 to extract the sequences that correspond
+# to the $output list
+
+#cleanfasta2 -infile $fasta -outfile out.fas -maxMissing 100 -samples $output
+
+#if [ -e '$output' ]; then
+#	echo 'File $output exists'
+#fi
+#
+#if [ -e "out.fas" ]; then
+#	echo "out.fas has been created"
+#fi
