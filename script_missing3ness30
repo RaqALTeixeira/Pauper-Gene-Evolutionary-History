@@ -1,0 +1,56 @@
+#!/bin/bash
+#runs from directory allsequences
+
+echo "Samples Values Species.Gene" > "./poorsamples.txt"
+
+for gene in gene.stats/*; do
+	output=${gene%.cds.fas.stats}
+	cds=${gene%.stats}
+
+	good_samples_file="allGoodSamples.list/${output##*/}.goodsamples.txt"
+	poor_samples_file="./poorsamples.txt"
+	few_samples_link="species.genes.fewgoodsamples/${output##*/}.goodsamples.few"
+
+	good_samples_count=0
+	total_samples_count=0
+
+	while read -r sample; do
+		value=$(echo "$sample" | awk -F ' ' '{print $2}')
+		label=$(echo "$sample" | awk -F ' ' '{print $1}')
+
+		#check the value of mislsingness and if it is
+
+		if (( $(echo "$value < 0.3" | bc -l) )); then
+			echo "$label $value" >> "$good_samples_file"
+			((good_samples_count++))
+		else
+			echo "$label $value ${output##*/}" >> "$poor_samples_file"
+		fi
+
+		((total_samples_count++))
+
+		#if more than one sample had > 30% missingness
+		#by checking if nº samples in output =< nº samples in input - 2
+
+	done < $gene
+
+	if [[ -e "$good_samples_file" ]]; then
+
+		line_count=$(wc -l < "$good_samples_file")
+
+		if (( line_count < 3 )); then
+
+			mv "$good_samples_file" "$few_samples_link"
+
+		fi
+	else
+		echo "$gene" >> "./species.genes.WithoutGoodSamples"
+	fi
+
+	#make a "ping" directory to store symbolic links to the species with more than one sample with more than 30% missingness
+	#create cds fasta files containing only the good samples for each gene in each species
+	#currentsamples=$(awk -F ' ' '{print $1}' $good_samples_file)
+
+	#cleanfasta2 -infile fastas.cds/$cds -outfile fastas.GoodCDS/$output.goodcds.fas -maxMissing 100 -format fasta -samples $currentsamples
+
+done
