@@ -1,0 +1,542 @@
+while read species; do
+	currentsamples=samplesOfInterestPERspecies/$species.samples.txt
+
+	#create a fasta file for the full scaffold_9 containing
+	#for the 3 or 4 samples of this species
+
+	cleanfasta2 -infile allExons.cnct.fas -outfile fastas.pauperCDS/pauper.$species.fas -maxMissing 100 -format fasta -samples $currentsamples
+
+	#for the genes in allGenesCHR9.txt
+
+	#while read gene; do
+
+		#get the CDS 
+		#gff=gene_annots/$gene.t1.txt
+		#cleanfasta2 -infile fastas.scaffold9/scaffold_9.$species.fas -outfile fastas.cds/$species.$gene.cds.fas -maxMissing 100 -verbose 1 -format fasta -gff $gff -scaffold scaffold_9 -include 1 -feature CDS
+
+	#done < allGenesCHR9.txt
+
+done < speciesOfInterest.names.txt
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+for gene in pauper.stats/*; do
+        output=${gene%.cds.fas.stats}
+        cds=${gene%.stats}
+
+        good_samples_file="allGoodSamples.list/${output##*/}.goodsamples.txt"
+        poor_samples_file="./poorsamples.txt"
+        few_samples_link="species.genes.fewgoodsamples/${output##*/}.goodsamples.few"
+
+        good_samples_count=0
+        total_samples_count=0
+
+        while read -r sample; do
+                value=$(echo "$sample" | awk -F ' ' '{print $2}')
+                label=$(echo "$sample" | awk -F ' ' '{print $1}')
+
+                #check the value of mislsingness and if it is
+
+                if (( $(echo "$value < 0.3" | bc -l) )); then
+                        echo "$label $value" >> "$good_samples_file"
+                        ((good_samples_count++))
+                else
+                        echo "$label $value ${output##*/}" >> "$poor_samples_file"
+                fi
+
+                ((total_samples_count++))
+
+                #if more than one sample had > 30% missingness
+                #by checking if nº samples in output =< nº samples in input - 2
+
+        done < $gene
+
+        if [[ -e "$good_samples_file" ]]; then
+
+                line_count=$(wc -l < "$good_samples_file")
+
+                if (( line_count < 3 )); then
+
+                        mv "$good_samples_file" "$few_samples_link"
+
+                fi
+        else
+                echo "$gene" >> "./species.genes.WithoutGoodSamples"
+        fi
+
+        #make a "ping" directory to store symbolic links to the species with more than one sample with more than 30% missingness
+        #create cds fasta files containing only the good samples for each gene in each species
+        #currentsamples=$(awk -F ' ' '{print $1}' $good_samples_file)
+done
+
+\\\\\\\\\\\\\\\\\\\\\
+
+for gene in species.genes.fewgoodsamples/*; do
+	sample=${gene%.goodsamples.few}
+	list=$(awk '{print $1}' "$gene")
+
+	echo "$list" > currentsamples.txt
+
+	cds_file_name="fastas.cds/${sample##*/}.cds.fas"
+	outfile="fastas.fewCDS/${sample##*/}.fewCDS.fas"
+
+	cleanfasta2 -infile "$cds_file_name" -outfile "$outfile" -maxMissing 100 -samples "currentsamples.txt" 
+
+done
+
+
+///////
+
+#select samples
+
+#stats.allSamples/*.lmut*
+
+for gene in stats.allSamples/*; do
+	case "$gene" in
+		*.goodsamples.few) sample="${gene%.goodsamples.few}" ;;
+		*.goodsamples.txt) sample="${gene%.goodsamples.txt}" ;;
+		*) echo "Pattern not recognized" ;;
+	esac
+
+
+	awk '{print $2, $1}' "$gene" | sort -n | head -n 1 | awk '{print $2}' > "list.selectSamples/${sample##*/}.slct.txt"
+
+done
+
+for gene in list.selectSamples/*; do
+	sample=${gene%.slct.txt}
+	input_file="fastas.allSamples/${sample##*/}*"
+	output_file="fastas.selectSamples/${sample##*/}.slct.fas"
+
+
+	cleanfasta2 -infile $input_file -outfile "$output_file" -maxMissing 100 -samples "$gene" 
+
+done
+
+
+
+#fasta2paml/12052015
+
+
+/////////////////
+
+FOR PAUPER
+
+cat fastas.selectSamples/*pauper* >> pauper.fas
+
+grep ">" pauper.fas | sed 's/>//' > pauper.list
+
+FOR ALLGENES
+
+#!/bin/bash
+
+#gets files (tree and phylip file) ready for codeml
+
+#gene_list=$1 #allGenes.wpauper.txt
+
+while read -r gene; do
+
+        inFasta="forFasta2Paml/$gene.allSpecies.fas"
+        inSamples="forFasta2Paml/$gene.Samplelist.txt"
+        outPrefix="forCODEML/$gene/$gene"
+
+        if ls fastas.selectSamples/*${gene}* 1> /dev/null 2>&1; then
+
+                mkdir forCODEML/$gene
+
+                cat fastas.selectSamples/*$gene* > $inFasta
+
+                grep ">" $inFasta | sed 's/>//' > $inSamples
+
+                fasta2paml -infile $inFasta -outfile $outPrefix -names $inSamples -tree "NAP.tre" -cutSeqs 100 -cutCodons 20 -dropBranches 1 -unroot 1 -strictNames 0
+
+                echo "Finish preparing files for $gene"
+        else
+
+                echo "No files found for: $gene"
+                echo "$gene" >> genes.withNoSamples.txt
+
+        fi
+
+done < allGenes.wpauper.txt
+//////// 
+
+|||| ATENÇÃO RAQUEL QUE OS FICHEIROS forCODEML QUE TENS AGORA TÊM 20 -CUTCODON
+
+
+#Prepare the tree files (nº sequences SPACE nº of trees (1))
+
+for gene in forCODEML/*; do
+        gene=${gene##*/}
+        sample_number=$(head -n 1 forCODEML/$gene/$gene.paml.phy | awk -F " " '{print $1}')
+
+        if [[ -n $sample_number && $sample_number =~ ^[0-9]+$ ]]; then
+
+                sed -i "1s/^/$sample_number 1\n/" forCODEML/$gene/$gene.paml.tre #1 is for the number of trees, for all there's just 1
+        else
+                echo "Something went wrong with $gene"
+        fi
+done
+
+
+///////
+
+#./script_allGenes.codeml2parameters
+
+#!/bin/bash
+
+# This script takes the .phy and .tre files previously created by
+# fasta2paml and runs them through the codeml comand from paml to obtain
+# the parameters w p and the likelihood of the model
+
+# It requires a template control file for codeml
+# With all the conditions one wishes to apply WITHOUT the seqfile, outfile and treefile
+# It also requires a list of the genes that will be cycled through
+# this is a text file with the name of the genes
+
+# Run from directory DNDS 
+
+TEMPLATERUN="$1"
+GENELIST="$2"
+
+mkdir controlfiles4codeml
+mkdir OUT_CodemlAllGenes
+
+errorfile="$GENELIST.codeml2prmtrs.errorfile.txt"
+
+while read -r gene_name; do 
+
+	# create a control file for codeml for that gene by
+	# adding the file names to the template
+
+	if [[ -e "forCODEML/$gene_name" ]]; then
+
+		# cycles through the previously created directories for each gene, which contain the .phy and .tre
+
+		control_file="controlfiles4codeml/$gene_name.ctl"
+
+		cp $TEMPLATERUN $control_file
+
+		seqfile="forCODEML/$gene_name/$gene_name.paml.phy"
+		outfile="OUT_FULLcodemlAllGenes/$gene_name.FULLcodeml"
+		treefile="forCODEML/$gene_name/$gene_name.paml.tre"
+
+		##sed -i "1s|^|	seqfile = $seqfile\n|" "2s|^|	outfile = $outfile\n|" "3s|^|	treefile = $treefile\n|" $control_file #add the tree name files in a line
+	else
+		echo "Error: $gene_name is not a directory in forCODEML/" >> "$errorfile"
+
+	fi
+
+done < "$GENELIST"
+
+echo "Finished preparing control files."
+echo "Initiating CODEML"
+
+while read -r gene_name; do
+
+	# For the genes in the list, it looks for if the control file for codeml was created 
+	# proceeds to run codeml using the control file for that gene in the list
+
+	control_file="controlfiles4codeml/$gene_name.ctl"
+
+	if [[ -e "$control_file" ]]; then
+
+		codeml $control_file
+	else
+		echo "Error: couldn't find control file for the gene $gene_name" >> "$errorfile"
+	fi
+
+done < "$GENELIST"
+
+echo "Finished generating codeml reports for genes in gene list"
+echo "Initiating parameter extraction"
+
+#from the $outfile created above, extract the relevant parameters
+
+mkdir OUT_PrmtrsCodeml
+
+while read -r gene_name; do
+
+	outfile="OUT_FULLcodemlAllGenes/$gene_name.FULLcodeml" #SAME AS IN THE FIRST LOOP WHERE THE CONTROL FILE DEFINED THE OUTPUT FILE NAME
+	file_name="OUT_PrmtrsCodeml/$gene_name/$gene_name"
+
+	mkdir OUT_PrmtrsCodeml/$gene_name # !!!!
+
+	if [[ -e "$outfile" ]]; then
+
+		# Finds the section of the 'outfile' dedicated to each model
+		# It looks for the common motifs "NSsites Model", which initiates model name
+		# and "dN & dS for each branch" which all models display, after which theres a table of dN dS
+		# In the intermediate space, the parameters p, w and likelihood can all be found
+
+		awk -v prefix="$file_name" '
+		BEGIN {
+			RS="NSsites Model";
+			ORS=""
+		}
+
+		NR > 1 {
+			model = $1;
+			model = gensub(/[^a-zA-Z0-9]/, "_", "g", model);
+			if (match($0, /dN & dS for each branch/)) {
+				print substr($0, 1, RSTART-1) > file_name "_" model ".txt";
+			}
+		}
+		' "$outfile"
+
+		# Once intermediate files for each model have been created
+		# this following part finds the common motifs of each parameters
+		# and extracts them onto a new file prmters_
+
+		for file in "$file_name*"; do
+
+			prmtrs_file="OUT_PrmtrsCodeml/$gene_name/prmtrs_$gene_name"
+
+			grep "lnL" "$file" > "$prmtrs_file"
+
+			if [[ "$file" == *model0* ]]; then
+				grep "omega" "$file" >> "$prmtrs_file"
+			else
+				awk '
+				/MLEs of dN\/dS/, /dN & dS for each branch/ {
+					if (/dN & dS for each branch/) exit
+					print
+				}
+				' "$file" >> "$prmtrs_file"
+			fi
+
+			rm "$file" # eliminates the intermediate 'section' file before the next loop
+		done
+
+	
+	else
+		echo "Error: couldn't find output codeml file for gene $gene_name" >> $errorfile
+	fi
+
+done < "$GENELIST"
+
+
+echo "RUN COMPLETED"
+
+/////
+
+
+
+input_file="$1"
+prefix="$2"
+
+awk -v prefix="$prefix" ' #pauper.model or $gene.model
+BEGIN {
+    RS="NSsites Model";  # Record Separator is the Model header
+    ORS=""               # No Output Record Separator to preserve formatting
+}
+
+NR > 1 {                # Skip the first record, which is before the first "NSsites Model"
+    model_name = $1;    # The first word after the record separator is the model name
+    model_name = gensub(/[^a-zA-Z0-9]/, "_", "g", model_name); # Clean model name for filename
+    if (match($0, /dN & dS for each branch/)) {
+        print substr($0, 1, RSTART-1) > prefix model_name ".txt";
+    }
+}
+' "$input_file"
+
+
+for file in pauper_model*; do
+    grep "lnL" "$file" > "$file.parameters"
+
+    if [[ "$file" == *model0* ]]; then
+        grep "omega" "$file" >> "$file.parameters"
+    else
+        awk '
+        /MLEs of dN\/dS/, /dN & dS for each branch/ {
+            if (/dN & dS for each branch/) exit
+            print
+        }
+        ' "$file" >> "$file.parameters"
+    fi
+done
+
+
+/////////////////////////
+
+split -l 57 CODEML.genelist.txt geneNames.txt
+
+#geneNames.txtaa
+#geneNames.paths.txt contains the paths to each geneNames
+
+#./script_allGenes.codeml3parameter.txt
+
+cat geneNames.txt | xargs -P 21 -I {} ./script.sh {} template
+
+#!/bin/bash
+
+# This script takes the .phy and .tre files previously created by
+# fasta2paml and runs them through the codeml comand from paml to obtain
+# the parameters w p and the likelihood of the model
+
+# It requires a template control file for codeml
+# With all the conditions one wishes to apply WITHOUT the seqfile, outfile and treefile
+# It also requires a list of the genes that will be cycled through
+# this is a text file with the name of the genes
+
+# Run from directory DNDS
+
+TEMPLATERUN="$1"
+GENELIST="$2" 
+# is given by xargs
+# from Path file to each gene list in the parallel execution
+
+
+#mkdir OUT_FULLcodemlAllGenes
+
+RFOLDER=`mktemp -d tempXXXXXXX`
+cd $RFOLDER
+
+mkdir controlfiles4codeml 
+mkdir OUT_FULLcodemlAllGenes
+#One of these directories is created within each
+#temporary folder
+
+errorfile="${GENELIST%.txt}.codeml2prmtrs.errorfile.txt" 
+echo "" > $errorfile #clear errorfile if there is any
+#error file for each gene list will be stored in the temp folder
+
+while read -r gene_name; do
+
+	# create a control file for codeml for that gene by
+	# adding the file names to the template
+
+	if [[ -e "../forCODEML/$gene_name" ]]; then
+
+		# cycles through the previously created directories for each gene, which contain the .phy and .tre
+
+		control_file="../controlfiles4codeml/$gene_name.ctl"
+
+		cp $TEMPLATERUN $control_file
+
+		seqfile="../forCODEML/$gene_name/$gene_name.paml.phy"
+		outfile="OUT_FULLcodemlAllGenes/$gene_name.FULLcodeml" # full out codeml is in temp folder
+		treefile="../forCODEML/$gene_name/$gene_name.paml.tre"
+
+		sed -i "1s|^|	seqfile = $seqfile\n|" $control_file
+		sed -i "2s|^|	outfile = $outfile\n|" $control_file
+		sed -i "3s|^|	treefile = $treefile\n|" $control_file #add the tree name files in a line
+		sed -i "4s|^|\n|" $control_file
+	else
+		echo "Error: $gene_name is not a directory in forCODEML/" >> "$errorfile"
+
+	fi
+
+done < "$GENELIST"
+
+echo "Finished preparing control files."
+echo "Initiating CODEML"
+
+while read -r gene_name; do
+
+	# For the genes in the list, it looks for if the control file for codeml was created
+	# proceeds to run codeml using the control file for that gene in the list
+
+	control_file="../controlfiles4codeml/$gene_name.ctl"
+
+	if [[ -e "$control_file" ]]; then
+
+		codeml $control_file
+	else
+		echo "Error: couldn't find control file for the gene $gene_name" >> "$errorfile"
+	fi
+
+	outfile="OUT_FULLcodemlAllGenes/$gene_name.FULLcodeml" #SAME AS IN THE FIRST LOOP WHERE THE CONTROL FILE DEFINED THE OUTPUT FILE NAME
+	file_name="../OUT_PrmtrsCodeml/$gene_name/$gene_name"
+
+	mkdir ../OUT_PrmtrsCodeml/$gene_name # !!!! in DNDS directory
+
+	if [[ -e "$outfile" ]]; then
+
+		# Finds the section of the 'outfile' dedicated to each model
+		# It looks for the common motifs "Model", which initiates model name
+		# and "dN & dS for each branch" which all models display, after which theres a table of dN dS
+		# In the intermediate space, the parameters p, w and likelihood can all be found
+
+		awk -v prefix="$file_name" '
+		BEGIN {
+			RS="Model";
+			ORS=""
+		}
+
+		NR > 1 {
+			model = $1;
+			model = gensub(/[^a-zA-Z0-9]/, "_", "g", model);
+			if (match($0, /dN & dS for each branch/)) {
+				print "Model" substr($0, 1, RSTART-1) > file_name "_" "model" model ".txt";
+			}
+		}
+		' "$outfile"
+
+		# Once intermediate files for each model have been created
+		# this following part finds the common motifs of each parameters
+		# and extracts them onto a new file prmters_
+
+		for file in "$file_name*"; do
+
+			prmtrs_file="../OUT_PrmtrsCodeml/$gene_name/prmtrs_$gene_name"
+
+			grep "Model" "$file" >> "$prmtrs_file"
+
+			grep "lnL" "$file" >> "$prmtrs_file" ### GO BACK AND FIX
+
+			if [[ "$file" == *model0* ]]; then
+				grep "omega" "$file" >> "$prmtrs_file"
+			else
+				awk '
+				/for site classes/, /dN & dS for each branch/ {
+					if (/dN & dS for each branch/) exit
+					print
+				}
+				' "$file" >> "$prmtrs_file"
+			fi
+
+			rm "$file" # eliminates the intermediate 'section' file before the next loop
+		done
+
+
+	else
+		echo "Error: couldn't find output codeml file for gene $gene_name" >> $errorfile
+	fi
+
+done < "$GENELIST"
+
+
+echo "RUN COMPLETED"
+
+#cp oputput file to outputfolder --> no need, things are already being redirected, hopefully
+
+cd ..
+
+
+|||||||||||
+
+
+SUMMARYFILE="$1"
+output_file="$2"
+
+echo '"Gene" "Model" "df" "LR" "p" "w"' > "$output_file"
+
+for file in M1vM2_Genes/*; do
+
+	#get the line in summary that corresponds to the gene being read
+
+	gene_name=${file%.m1vm2.txt}
+
+	line=$(grep "$gene_name" $SUMMARYFILE)
+
+	p_value=$(grep '^p:' $file | awk '{print $2}')
+	w_value=$(grep '^w:' $file | awk '{print $2}')
+
+	echo "$line" "$p_value" "$w_value" >> "$output_file"
+
+done
+
+
+
+
