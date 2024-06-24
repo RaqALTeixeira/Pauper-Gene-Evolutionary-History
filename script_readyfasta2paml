@@ -1,0 +1,31 @@
+#!/bin/bash
+
+#gets files (tree and phylip file) ready for codeml
+
+#gene_list=$1 #allGenes.wpauper.txt
+
+while read -r gene; do
+
+	inFasta="forFasta2Paml/$gene.allSpecies.fas"
+	inSamples="forFasta2Paml/$gene.Samplelist.txt"
+	outPrefix="forCODEML/$gene/$gene"
+
+	if ls fastas.selectSamples/*${gene}* 1> /dev/null 2>&1; then
+
+		mkdir forCODEML/$gene
+
+		cat fastas.selectSamples/*$gene* > $inFasta
+
+		grep ">" $inFasta | sed 's/>//' > $inSamples
+
+		fasta2paml -infile $inFasta -outfile $outPrefix -names $inSamples -tree "NAP.tre" -cutSeqs 100 -cutCodons 50 -dropBranches 1 -unroot 1 -strictNames 0
+
+		echo "Finish preparing files for $gene"
+	else
+
+		echo "No files found for: $gene"
+		echo "$gene" >> genes.withNoSamples.txt
+
+	fi
+
+done < allGenes.wpauper.txt
